@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     stage_retry_base_delay_seconds: float = 1.2
 
     # STT
-    stt_primary_provider: str = "minimax"
-    stt_fallback_provider: str = "elevenlabs"
+    stt_primary_provider: str = "qwen"
+    stt_fallback_provider: str = "minimax"
 
     minimax_api_key: str = ""
     minimax_group_id: str = ""
@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     elevenlabs_api_key: str = ""
     elevenlabs_model_id: str = "scribe_v1"
+
+    dashscope_api_key: str = ""
+    qwen_asr_model: str = "qwen3-asr-flash"
 
     # LLM analysis
     llm_base_url: str = "https://api.openai.com/v1"

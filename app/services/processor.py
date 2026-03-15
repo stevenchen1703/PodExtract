@@ -18,6 +18,7 @@ from app.services.queue import JobQueue
 from app.services.stt.base import STTProvider
 from app.services.stt.elevenlabs import ElevenLabsSTTProvider
 from app.services.stt.minimax import MiniMaxSTTProvider
+from app.services.stt.qwen import QwenASRProvider
 
 if TYPE_CHECKING:
     from app.services.queue import JobQueue
@@ -194,5 +195,10 @@ class JobProcessor:
             return ElevenLabsSTTProvider(
                 api_key=self.settings.elevenlabs_api_key,
                 model_id=self.settings.elevenlabs_model_id,
+            )
+        if name == "qwen":
+            return QwenASRProvider(
+                api_key=self.settings.dashscope_api_key,
+                model=self.settings.qwen_asr_model,
             )
         raise StageFailure("STT_PROVIDER_UNSUPPORTED", name)
