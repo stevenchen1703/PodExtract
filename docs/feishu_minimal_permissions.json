@@ -1,0 +1,23 @@
+{
+  "name": "podextract-feishu-minimal",
+  "bot_capability_enabled": true,
+  "event_subscriptions": [
+    "im.message.receive_v1"
+  ],
+  "scope_import_payload": {
+    "scopes": {
+      "im:message": {},
+      "docx:document": {},
+      "base:record:create": {}
+    }
+  },
+  "notes": {
+    "im:message": "Receive message events and send messages in chat.",
+    "docx:document": "Create and edit Docx documents.",
+    "base:record:create": "Create Bitable records.",
+    "optional": [
+      "im:message:send_as_bot",
+      "bitable:app"
+    ]
+  }
+}

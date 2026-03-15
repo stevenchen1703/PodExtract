@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PodExtract 架构图</title>
+    <style>
+      :root {
+        --bg: #f7f9fc;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #475569;
+        --line: #d7dee9;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .mermaid {
+        overflow-x: auto;
+      }
+      code {
+        background: #eef2f7;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>PodExtract 全云端业务线框图</h1>
+        <p>说明：用户入口 -> 任务编排 -> 提取音频 -> 云端转录 -> 分析 -> 飞书交付</p>
+
+        <pre class="mermaid">
+flowchart LR
+  U["你（飞书聊天 / 测试页）"] --> FE["飞书事件 API\nim.message.receive_v1"]
+  U --> WEB["Web Sandbox"]
+  WEB --> API["PodExtract API"]
+
+  FE --> API
+  API --> DB["任务库\nPostgres/SQLite"]
+  API --> Q["队列\nRedis/SQS"]
+  Q --> WK["Worker"]
+
+  WK --> SR["来源解析器"]
+  SR --> AP["Apify Downloader API\nYouTube/Bilibili -> 音频URL"]
+  SR --> IT["Apple iTunes Lookup API\nApple页面 -> RSS"]
+  SR --> RSS["RSS Feed\nenclosure 音频URL"]
+
+  AP --> AU["音频URL"]
+  RSS --> AU
+  IT --> RSS
+
+  AU --> OSS["对象存储 S3/R2（可选）\n统一为稳定预签名URL"]
+  AU --> STT["ElevenLabs STT API"]
+  OSS --> STT
+
+  STT --> TR["逐字稿 + 说话人分段"]
+  TR --> AN["LLM 分析 API"]
+  OC["OpenClaw Memory API（可选）"] --> AN
+  KB["知识库检索 API（可选）"] --> AN
+
+  AN --> OUT["结构化结果\n逻辑脉络/亮点/工作结合/知识关联"]
+  OUT --> DOC["飞书 Docx API"]
+  OUT --> BT["飞书 Bitable API"]
+  OUT --> MSG["飞书消息发送 API"]
+  MSG --> U
+        </pre>
+
+        <p>打开方式：浏览器直接打开本文件，或用本地 HTTP 服务访问。</p>
+        <p>文件路径：<code>/Users/a1/Documents/CodexPro/PodExtract/docs/architecture.html</code></p>
+      </div>
+    </div>
+
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "default",
+        securityLevel: "loose"
+      });
+    </script>
+  </body>
+</html>

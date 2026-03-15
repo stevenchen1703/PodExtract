@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PodExtract 运行逻辑（竖向流程图）</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --line: #d6e2f0;
+      --text: #142235;
+      --accent: #1f6feb;
+      --ok: #1a7f37;
+      --err: #b42318;
+      --shadow: 0 10px 26px rgba(20, 34, 53, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 16px 40px;
+      background: radial-gradient(circle at top right, #eaf2ff 0%, var(--bg) 48%);
+      color: var(--text);
+      font: 14px/1.5 "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .sub {
+      margin: 0 0 20px;
+      text-align: center;
+      color: #4d647f;
+      font-size: 13px;
+    }
+    .flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .node {
+      width: min(860px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+    }
+    .node.main { border-left: 5px solid var(--accent); }
+    .node.ok   { border-left: 5px solid var(--ok); }
+    .node.err  { border-left: 5px solid var(--err); }
+    .arrow {
+      color: var(--accent);
+      font-size: 22px;
+      line-height: 1;
+      user-select: none;
+    }
+    .split {
+      width: min(860px, 100%);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .tag {
+      display: inline-block;
+      margin-bottom: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #eef4ff;
+      color: #1f4b99;
+    }
+    code {
+      background: #edf2f8;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-size: 12px;
+    }
+    @media (max-width: 760px) {
+      .split { grid-template-columns: 1fr; }
+      h1 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>PodExtract 运行逻辑（竖向）</h1>
+    <p class="sub">基于当前实现：API + Redis 队列 + Worker + 分阶段处理 + 飞书回写</p>
+
+    <div class="flow">
+      <div class="node main">
+        <span class="tag">入口</span><br>
+        1) 用户提交链接：<code>POST /v1/jobs</code> 或 <code>POST /v1/feishu/events</code><br>
+        飞书入口先做 token 验证、解析消息文本里的第一个 URL。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">来源识别</span><br>
+        2) <code>SourceResolver</code> 规范化 URL + 判断平台：YouTube / Bilibili / RSS / Apple Podcast。<br>
+        Apple 链接会先调 iTunes Lookup 拿 <code>feedUrl</code>，再转成可去重的 canonical URL。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">去重</span><br>
+        3) SQLite 按 <code>canonical_url</code> + 时间窗口（默认 24h）查重。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="split">
+        <div class="node">
+          命中重复任务：直接返回已有 <code>job_id</code>。<br>
+          若来自飞书且已有任务在 <code>queued/running</code>，会补写通知目标。
+        </div>
+        <div class="node">
+          未命中：创建 Job（<code>status=queued</code>）写入 SQLite，<br>
+          并把 <code>job_id</code> 入 Redis 列表队列。
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">异步消费</span><br>
+        4) Worker 循环 <code>BLPOP</code> 出队 <code>job_id</code>，进入 <code>JobProcessor.process()</code>。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">Stage 1: Extract</span><br>
+        5) 更新状态为 <code>running/extract</code>，抽取音频。<br>
+        YouTube/Bilibili：<code>yt-dlp</code>；RSS/Apple：拉 feed，取最新 item 的 enclosure 下载音频。<br>
+        失败按指数退避重试（默认 3 次），最终失败抛 <code>EXTRACT_FAILED</code>。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">Stage 2: Transcribe</span><br>
+        6) 更新为 <code>transcribe</code>，调用 STT：主服务默认 MiniMax；失败时切换 ElevenLabs 兜底。<br>
+        整体按配置重试（默认 2 次），最终失败抛 <code>TRANSCRIBE_FAILED</code>。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">Stage 3: Analyze</span><br>
+        7) 更新为 <code>analyze</code>，先取 Memory/KB 上下文，再调用 LLM 产出结构化 JSON。<br>
+        若无 LLM key 或调用异常，走降级结果（保底结构，不中断流程）。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">Stage 4: Publish</span><br>
+        8) 更新为 <code>publish</code>，写飞书 Doc（raw markdown）+ 可选 Bitable 记录。<br>
+        失败重试（默认 2 次），最终失败抛 <code>PUBLISH_FAILED</code>。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="split">
+        <div class="node ok">
+          成功路径：<br>
+          9) <code>status=completed</code>，<code>stage=done</code>，保存 delivery 信息。
+        </div>
+        <div class="node err">
+          失败路径：<br>
+          9) <code>status=failed</code>，记录标准化错误码（StageFailure）或 <code>UNHANDLED</code>。
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node main">
+        <span class="tag">最终通知</span><br>
+        10) 无论成功或失败，只要存在 <code>notify_target</code>，都会回发飞书消息（文档链接或错误原因）。
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="node">
+        备注：<code>/v1/subscriptions</code>、<code>/v1/digests</code> 目前仅为二期占位接口，不参与一期主处理链路。
+      </div>
+    </div>
+  </div>
+</body>
+</html>
