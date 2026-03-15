@@ -106,6 +106,7 @@ class JobProcessor:
             await self.store.save_job(job)
             logger.exception("job failed with unhandled error", extra={"job_id": job.job_id})
         finally:
+            logger.info(f"Job {job.job_id} finished, notify_target={job.notify_target is not None}, status={job.status.value}")
             if job.notify_target:
                 try:
                     await self.feishu.send_job_result(job.notify_target, job)

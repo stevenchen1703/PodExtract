@@ -88,11 +88,35 @@ class FeishuClient:
             "notify_target": target,
         }
 
-    async def send_ack(self, target: NotificationTarget, job_id: str) -> None:
+    async def send_ack(self, target: NotificationTarget, job_id: str, input_url: str) -> None:
         if not target.receive_id:
             return
-        msg = f"任务已创建，正在处理中。Job ID: {job_id}"
+        # Try to get a meaningful title from URL
+        title = self._extract_title_from_url(input_url)
+        msg = f"任务已创建，{title}正在处理中"
         await self.send_text(target.receive_id_type or "chat_id", target.receive_id, msg)
+
+    def _extract_title_from_url(self, url: str) -> str:
+        """Extract a display title from the URL."""
+        if not url:
+            return "播客"
+        # YouTube: show video ID or try to get from URL
+        if "youtube.com" in url or "youtu.be" in url:
+            # Try to extract video ID
+            import re
+            match = re.search(r'(?:v=|/v/|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
+            if match:
+                return f"YouTube 视频 ({match.group(1)})"
+        # Bilibili
+        if "bilibili.com" in url:
+            return "B站 视频"
+        # Apple Podcast
+        if "podcasts.apple.com" in url:
+            return "Apple Podcast"
+        # RSS
+        if url.startswith("http") and not any(x in url for x in ["youtube", "bilibili", "apple"]):
+            return "RSS 订阅"
+        return "播客"
 
     async def send_job_result(self, target: NotificationTarget, job: JobState) -> None:
         logger.info(f"send_job_result called for job {job.job_id}, status={job.status.value}")

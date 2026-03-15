@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
                 msg = f"发现重复任务，复用 Job: {job.job_id}"
                 await app.state.feishu.send_text(notify.receive_id_type, notify.receive_id, msg)
             else:
-                await app.state.feishu.send_ack(notify, job.job_id)
+                await app.state.feishu.send_ack(notify, job.job_id, job.input_url)
         return JSONResponse({"ok": True, "job_id": job.job_id, "deduplicated": dedup})
 
     @app.get("/sandbox", response_class=HTMLResponse)
@@ -203,7 +203,6 @@ def create_app() -> FastAPI:
         <div class="card">
           <div class="card-header">任务列表</div>
           <div class="card-body">
-            <div id="debugStatus" style="font-size:12px; color:#666; padding:5px;">初始化中...</div>
             <div id="jobList"><div class="empty">加载中...</div></div>
           </div>
         </div>
@@ -241,31 +240,22 @@ var logSource = null;
 var jobData = {};
 
 function init() {
-  try {
-    document.getElementById('debugStatus').textContent = '正在加载任务列表...';
-    loadJobs();
-  } catch (e) {
-    document.getElementById('debugStatus').textContent = '初始化错误: ' + e.message;
-  }
+  loadJobs();
 }
 
 function loadJobs() {
-  document.getElementById('debugStatus').textContent = '正在请求 API...';
   var xhr = new XMLHttpRequest();
   xhr.open('GET', '/v1/jobs', true);
   xhr.onload = function() {
     if (xhr.status === 200) {
       var jobs = JSON.parse(xhr.responseText);
-      document.getElementById('debugStatus').textContent = 'API 返回 ' + jobs.length + ' 个任务';
       renderJobs(jobs);
     } else {
-      document.getElementById('debugStatus').textContent = '加载失败: ' + xhr.status;
       var el = document.getElementById('jobList');
       el.innerHTML = '<div class="empty">加载失败: ' + xhr.status + '</div>';
     }
   };
   xhr.onerror = function() {
-    document.getElementById('debugStatus').textContent = '网络错误';
     var el = document.getElementById('jobList');
     el.innerHTML = '<div class="empty">网络错误</div>';
   };
@@ -275,15 +265,12 @@ function loadJobs() {
 function renderJobs(jobs) {
   var el = document.getElementById('jobList');
   if (!el) {
-    document.getElementById('debugStatus').textContent = '错误: 找不到 jobList 元素';
     return;
   }
   if (!jobs || jobs.length === 0) {
     el.innerHTML = '<div class="empty">暂无任务</div>';
-    document.getElementById('debugStatus').textContent = '没有任务';
     return;
   }
-  document.getElementById('debugStatus').textContent = '正在渲染 ' + jobs.length + ' 个任务';
   var html = '';
   for (var i = 0; i < jobs.length; i++) {
     var job = jobs[i];
@@ -314,6 +301,8 @@ function selectJob(jobId) {
 
 function fetchJob() {
   if (!currentJobId) return;
+  // Also refresh the job list to update status badges
+  loadJobs();
   var xhr = new XMLHttpRequest();
   xhr.open('GET', '/v1/jobs/' + currentJobId, true);
   xhr.onload = function() {
