@@ -203,6 +203,7 @@ def create_app() -> FastAPI:
         <div class="card">
           <div class="card-header">任务列表</div>
           <div class="card-body">
+            <div id="debugStatus" style="font-size:12px; color:#666; padding:5px;">初始化中...</div>
             <div id="jobList"><div class="empty">加载中...</div></div>
           </div>
         </div>
@@ -233,43 +234,75 @@ def create_app() -> FastAPI:
     </div>
   </div>
   <script>
+console.log('PodExtract UI script loaded');
 var currentJobId = null;
 var pollTimer = null;
 var logSource = null;
 var jobData = {};
 
-function init() { loadJobs(); }
+function init() {
+  try {
+    document.getElementById('debugStatus').textContent = '正在加载任务列表...';
+    loadJobs();
+  } catch (e) {
+    document.getElementById('debugStatus').textContent = '初始化错误: ' + e.message;
+  }
+}
 
 function loadJobs() {
+  document.getElementById('debugStatus').textContent = '正在请求 API...';
   var xhr = new XMLHttpRequest();
   xhr.open('GET', '/v1/jobs', true);
   xhr.onload = function() {
     if (xhr.status === 200) {
       var jobs = JSON.parse(xhr.responseText);
+      document.getElementById('debugStatus').textContent = 'API 返回 ' + jobs.length + ' 个任务';
       renderJobs(jobs);
+    } else {
+      document.getElementById('debugStatus').textContent = '加载失败: ' + xhr.status;
+      var el = document.getElementById('jobList');
+      el.innerHTML = '<div class="empty">加载失败: ' + xhr.status + '</div>';
     }
+  };
+  xhr.onerror = function() {
+    document.getElementById('debugStatus').textContent = '网络错误';
+    var el = document.getElementById('jobList');
+    el.innerHTML = '<div class="empty">网络错误</div>';
   };
   xhr.send();
 }
 
 function renderJobs(jobs) {
   var el = document.getElementById('jobList');
-  if (!jobs || jobs.length === 0) {
-    el.innerHTML = '<div class="empty">暂无任务</div>';
+  if (!el) {
+    document.getElementById('debugStatus').textContent = '错误: 找不到 jobList 元素';
     return;
   }
+  if (!jobs || jobs.length === 0) {
+    el.innerHTML = '<div class="empty">暂无任务</div>';
+    document.getElementById('debugStatus').textContent = '没有任务';
+    return;
+  }
+  document.getElementById('debugStatus').textContent = '正在渲染 ' + jobs.length + ' 个任务';
   var html = '';
   for (var i = 0; i < jobs.length; i++) {
     var job = jobs[i];
     var active = job.job_id === currentJobId ? ' active' : '';
     var title = job.source && job.source.title ? job.source.title : (job.input_url || 'Unknown');
     var stage = getStageLabel(job.stage);
-    html += '<div class="job-item' + active + '" onclick="selectJob(\\'' + job.job_id + '\\')">';
+    html += '<div class="job-item' + active + '" data-job-id="' + job.job_id + '">';
     html += '<span class="status-badge status-' + job.status + '">' + job.status + '</span>';
     html += '<div class="job-title">' + esc(title) + '</div>';
     html += '<div class="job-meta">' + stage + ' · ' + fmtTime(job.created_at) + '</div></div>';
   }
   el.innerHTML = html;
+  // Add click handlers
+  var items = el.querySelectorAll('.job-item');
+  for (var i = 0; i < items.length; i++) {
+    items[i].addEventListener('click', function() {
+      selectJob(this.getAttribute('data-job-id'));
+    });
+  }
 }
 
 function selectJob(jobId) {
@@ -323,7 +356,9 @@ function showJob(job) {
   if (job.analysis && job.analysis.logic_outline && job.analysis.logic_outline.length > 0) {
     var html = '';
     for (var i = 0; i < job.analysis.logic_outline.length; i++) {
-      html += '<div class="outline-item">' + esc(job.analysis.logic_outline[i]) + '</div>';
+      // Convert newlines to <br> for proper display
+      var content = String(job.analysis.logic_outline[i]).split('\\n').join('<br>');
+      html += '<div class="outline-item">' + content + '</div>';
     }
     obox.innerHTML = html;
   } else {
@@ -440,7 +475,12 @@ function fmtDur(s) {
 
 function esc(text) {
   if (!text) return '';
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  var s = String(text);
+  s = s.split('&').join('&amp;');
+  s = s.split('<').join('&lt;');
+  s = s.split('>').join('&gt;');
+  s = s.split('"').join('&quot;');
+  return s;
 }
 
 init();

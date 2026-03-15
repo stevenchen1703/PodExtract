@@ -31,14 +31,14 @@ class SourceResolver:
         host = parsed.netloc.lower()
 
         if "podcasts.apple.com" in host:
-            feed_url = await self._resolve_apple_feed(clean)
+            feed_url, entry_url = await self._resolve_apple_feed(clean)
             canonical = self._clean_url(feed_url)
             return SourceInfo(
                 platform=SourcePlatform.apple_podcast,
                 original_url=url,
                 canonical_url=canonical,
                 feed_url=canonical,
-                entry_url=clean,
+                entry_url=entry_url,
             )
 
         if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
@@ -103,7 +103,12 @@ class SourceResolver:
         path = parsed.path.rstrip("/")
         return f"https://www.bilibili.com{path}" if path.startswith("/") else url
 
-    async def _resolve_apple_feed(self, apple_page_url: str) -> str:
+    async def _resolve_apple_feed(self, apple_page_url: str) -> tuple[str, str]:
+        """Returns (feed_url, entry_url) tuple."""
+        # Note: Apple episode IDs (?i=) are internal and can't be looked up via iTunes API
+        # We use the podcast feed URL and let RSS fetcher handle episode selection
+
+        # Get podcast ID
         apple_id = self._extract_apple_id(apple_page_url)
         if not apple_id:
             raise ValueError("APPLE_PODCAST_ID_NOT_FOUND")
@@ -120,10 +125,19 @@ class SourceResolver:
                 continue
             feed = row.get("feedUrl")
             if feed:
-                return str(feed)
+                return str(feed), apple_page_url
+
         raise ValueError("APPLE_PODCAST_FEED_NOT_FOUND")
 
     @staticmethod
     def _extract_apple_id(url: str) -> str:
         match = _APPLE_ID_RE.search(url)
         return match.group(1) if match else ""
+
+    @staticmethod
+    def _extract_episode_id(url: str) -> str:
+        """Extract episode ID from ?i= parameter."""
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        episode_ids = params.get("i", [])
+        return episode_ids[0] if episode_ids else ""

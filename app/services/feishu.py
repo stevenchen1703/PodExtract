@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -8,6 +9,8 @@ import httpx
 
 from app.models import AnalysisResult, DeliveryResult, JobState, NotificationTarget, TranscriptResult
 from app.services.source import extract_first_url
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -92,16 +95,26 @@ class FeishuClient:
         await self.send_text(target.receive_id_type or "chat_id", target.receive_id, msg)
 
     async def send_job_result(self, target: NotificationTarget, job: JobState) -> None:
+        logger.info(f"send_job_result called for job {job.job_id}, status={job.status.value}")
         if not target.receive_id:
+            logger.warning(f"No receive_id for job {job.job_id}, skipping notification")
             return
 
         if job.status.value == "completed":
-            doc = job.delivery.feishu_doc_url if job.delivery else ""
-            highlights = "; ".join((job.analysis.highlights if job.analysis else [])[:3])
-            msg = f"处理完成：{job.source.title or 'Untitled'}\n文档：{doc or 'N/A'}\n亮点：{highlights or 'N/A'}"
+            title = job.source.title or "Untitled"
+            # Include web UI link instead of just doc URL
+            web_url = f"http://127.0.0.1:8000/sandbox"
+            highlights = ""
+            if job.analysis and job.analysis.highlights:
+                highlights = "\n".join([f"• {h}" for h in job.analysis.highlights[:3]])
+                highlights = f"\n亮点：\n{highlights}"
+
+            msg = f"✅ 处理完成：{title}\n\n查看详情：{web_url}{highlights}"
+            logger.info(f"Sending completion message for job {job.job_id}")
         else:
             code = job.error.code or "UNKNOWN"
-            msg = f"处理失败：{code} - {job.error.message}"
+            msg = f"❌ 处理失败：{code}\n\n{job.error.message or '请稍后重试'}"
+            logger.error(f"Job {job.job_id} failed: {code}")
 
         await self.send_text(target.receive_id_type or "chat_id", target.receive_id, msg)
 
