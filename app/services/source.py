@@ -31,6 +31,8 @@ class SourceResolver:
         host = parsed.netloc.lower()
 
         if "podcasts.apple.com" in host:
+            # Extract episode ID if present
+            episode_id = self._extract_episode_id(url)  # Use original URL, not cleaned
             feed_url, entry_url = await self._resolve_apple_feed(clean)
             canonical = self._clean_url(feed_url)
             return SourceInfo(
@@ -39,6 +41,7 @@ class SourceResolver:
                 canonical_url=canonical,
                 feed_url=canonical,
                 entry_url=entry_url,
+                episode_id=episode_id,
             )
 
         if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:

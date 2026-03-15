@@ -56,6 +56,7 @@ class SourceInfo(BaseModel):
     duration_seconds: float = 0.0
     feed_url: str = ""
     entry_url: str = ""
+    episode_id: str = ""  # Apple Podcast episode ID from ?i= parameter
 
 
 class TranscriptSegment(BaseModel):

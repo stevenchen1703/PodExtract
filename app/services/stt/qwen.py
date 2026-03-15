@@ -25,9 +25,8 @@ class QwenASRProvider(STTProvider):
         if not self.api_key:
             raise RuntimeError("DASHSCOPE_API_KEY_MISSING")
 
-        # For local files, we need to upload to a public URL first
-        # Or use file:// protocol if dashscope supports it
-        # For now, try with file path
+        logger.info(f"Qwen ASR: Starting transcription for {audio_path}")
+        logger.info(f"Qwen ASR: File exists: {audio_path.exists()}, size: {audio_path.stat().st_size if audio_path.exists() else 0}")
 
         asr_options = {
             "enable_lid": True,  # Enable language detection
@@ -35,10 +34,12 @@ class QwenASRProvider(STTProvider):
         }
         if language_hint:
             asr_options["language"] = language_hint
+            logger.info(f"Qwen ASR: Language hint: {language_hint}")
 
-        # Try to use file URL - dashscope may support file:// or oss URLs
-        # For local files, we need to make them accessible
-        audio_url = str(audio_path.absolute())
+        # Qwen ASR expects a publicly accessible URL
+        # For local files, we need to use file:// protocol or upload to OSS
+        audio_url = f"file://{audio_path.absolute()}"
+        logger.info(f"Qwen ASR: Using audio URL: {audio_url}")
 
         messages = [
             {
@@ -54,12 +55,14 @@ class QwenASRProvider(STTProvider):
         ]
 
         try:
+            logger.info(f"Qwen ASR: Calling API with model {self.model}...")
             response = MultiModalConversation.call(
                 model=self.model,
                 messages=messages,
                 result_format="message",
                 asr_options=asr_options,
             )
+            logger.info(f"Qwen ASR: Response status: {response.status_code}")
         except Exception as e:
             logger.error(f"Qwen ASR call failed: {e}")
             raise RuntimeError(f"QWEN_ASR_FAILED: {e}")

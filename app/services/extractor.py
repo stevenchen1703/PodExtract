@@ -25,16 +25,22 @@ class ExtractorService:
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
     def fetch_audio(self, source: SourceInfo, job_id: str) -> tuple[Path, dict, SourceInfo]:
+        # For Apple Podcast with specific episode ID, use yt-dlp directly
+        if source.platform == SourcePlatform.apple_podcast and source.episode_id:
+            return self._fetch_ytdlp_audio(source, job_id, use_original_url=True)
         if source.platform in {SourcePlatform.rss, SourcePlatform.apple_podcast} or source.feed_url:
             return self._fetch_rss_audio(source, job_id)
         return self._fetch_ytdlp_audio(source, job_id)
 
-    def _fetch_ytdlp_audio(self, source: SourceInfo, job_id: str) -> tuple[Path, dict, SourceInfo]:
+    def _fetch_ytdlp_audio(self, source: SourceInfo, job_id: str, use_original_url: bool = False) -> tuple[Path, dict, SourceInfo]:
         job_dir = self.work_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
         output_template = str(job_dir / "audio.%(ext)s")
         info_path = job_dir / "info.json"
+
+        # Use original URL if specified (e.g., for Apple Podcast with episode ID)
+        url_to_fetch = source.original_url if use_original_url else source.canonical_url
 
         cmd = [
             sys.executable,
@@ -46,7 +52,7 @@ class ExtractorService:
             "--output",
             output_template,
             "--print-json",
-            source.canonical_url,
+            url_to_fetch,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
