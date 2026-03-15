@@ -25,6 +25,15 @@ class ExtractorService:
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
     def fetch_audio(self, source: SourceInfo, job_id: str) -> tuple[Path, dict, SourceInfo]:
+        # Check if platform supports subtitles (YouTube, Bilibili)
+        if source.platform in {SourcePlatform.youtube}:
+            # Try to get subtitles first (subtitle-first strategy)
+            subs = self._check_subtitles(source.canonical_url)
+            if subs:
+                # TODO: Implement subtitle-first flow
+                # For now, fall through to audio download
+                pass
+
         # For Apple Podcast with specific episode ID, use yt-dlp directly
         if source.platform == SourcePlatform.apple_podcast and source.episode_id:
             return self._fetch_ytdlp_audio(source, job_id, use_original_url=True)
@@ -69,7 +78,12 @@ class ExtractorService:
         source.title = str(metadata.get("title") or metadata.get("fulltitle") or source.title)
         source.author = str(metadata.get("uploader") or metadata.get("channel") or source.author)
         source.published_at = str(metadata.get("upload_date") or source.published_at)
-        source.duration_seconds = float(metadata.get("duration") or 0.0)
+        expected_duration = float(metadata.get("duration") or 0.0)
+        source.duration_seconds = expected_duration
+
+        # Verify duration with ffprobe
+        if expected_duration > 0:
+            self._verify_duration(audio_files[0], expected_duration)
 
         return audio_files[0], metadata, source
 
@@ -155,3 +169,101 @@ class ExtractorService:
         if suffix in {".m4a", ".mp3", ".wav", ".aac", ".ogg", ".flac", ".webm"}:
             return suffix
         return ".mp3"
+
+    def _check_subtitles(self, url: str) -> list[str]:
+        """Check if subtitles are available for the given URL.
+
+        Returns:
+            List of available subtitle language codes
+        """
+        try:
+            cmd = [
+                sys.executable, "-m", "yt_dlp",
+                "--list-subs", "--no-download", url
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                return []
+
+            # Parse output for available subtitles
+            subs = []
+            for line in result.stdout.splitlines():
+                if "available subtitles:" in line.lower():
+                    # Next lines contain language codes
+                    continue
+                # Simple parsing - could be enhanced
+                if line.strip() and not line.startswith("["):
+                    lang = line.strip().split(":")[0]
+                    if lang and lang not in subs:
+                        subs.append(lang)
+            return subs
+        except Exception:
+            return []
+
+    def _download_subtitles(self, url: str, output_path: Path) -> str | None:
+        """Download subtitles to file.
+
+        Returns:
+            Path to downloaded subtitle file, or None if failed
+        """
+        try:
+            cmd = [
+                sys.executable, "-m", "yt_dlp",
+                "--write-subs", "--sub-lang", "en,zh-CN,zh",
+                "--skip-download",
+                "--output", str(output_path / "subs.%(ext)s"),
+                url
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                return None
+
+            # Find downloaded subtitle file
+            for ext in [".vtt", ".srt", ".txt"]:
+                files = list(output_path.glob(f"subs*{ext}"))
+                if files:
+                    return str(files[0])
+            return None
+        except Exception:
+            return None
+
+    def _verify_duration(self, audio_path: Path, expected_duration: float, threshold: float = 0.1) -> None:
+        """Verify downloaded audio duration matches expected duration.
+
+        Args:
+            audio_path: Path to downloaded audio file
+            expected_duration: Expected duration in seconds from metadata
+            threshold: Allowable difference ratio (default 10%)
+
+        Raises:
+            ExtractionError: If duration difference exceeds threshold
+        """
+        try:
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                # ffprobe not available or failed, skip validation
+                return
+
+            actual_duration = float(result.stdout.strip())
+            if actual_duration <= 0:
+                return
+
+            diff_ratio = abs(actual_duration - expected_duration) / expected_duration
+            if diff_ratio > threshold:
+                raise ExtractionError(
+                    f"Audio duration mismatch: expected {expected_duration:.0f}s, got {actual_duration:.0f}s "
+                    f"(diff: {diff_ratio*100:.1f}%)"
+                )
+        except subprocess.TimeoutExpired:
+            # ffprobe timeout, skip validation
+            pass
+        except ValueError:
+            # Could not parse duration, skip validation
+            pass

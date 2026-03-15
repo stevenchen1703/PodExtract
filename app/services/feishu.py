@@ -118,6 +118,21 @@ class FeishuClient:
             return "RSS 订阅"
         return "播客"
 
+    async def send_progress(self, target: NotificationTarget, stage: str, title: str = None) -> None:
+        """Send progress notification to user."""
+        if not target.receive_id:
+            return
+
+        title_str = title or "播客"
+        if stage == "transcribe":
+            msg = f"🎙️ {title_str} 开始 AI 转录中，请稍候..."
+        elif stage == "analyze":
+            msg = f"🧠 {title_str} 开始 AI 分析中，请稍候..."
+        else:
+            return
+
+        await self.send_text(target.receive_id_type or "chat_id", target.receive_id, msg)
+
     async def send_job_result(self, target: NotificationTarget, job: JobState) -> None:
         logger.info(f"send_job_result called for job {job.job_id}, status={job.status.value}")
         if not target.receive_id:

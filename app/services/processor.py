@@ -77,12 +77,25 @@ class JobProcessor:
             await self.store.save_job(job)
 
             await self._log(job_id, "阶段 2/4: ASR 转写中...")
+            # Send progress notification
+            if job.notify_target:
+                try:
+                    await self.feishu.send_progress(job.notify_target, "transcribe", job.source.title or None)
+                except Exception:
+                    logger.exception("failed to send transcribe progress")
+
             transcript = await self._run_transcribe(job, audio_path)
             job.transcript = transcript
             job.stage = JobStage.analyze
             await self.store.save_job(job)
 
             await self._log(job_id, "阶段 3/4: AI 分析中...")
+            # Send progress notification
+            if job.notify_target:
+                try:
+                    await self.feishu.send_progress(job.notify_target, "analyze", job.source.title or None)
+                except Exception:
+                    logger.exception("failed to send analyze progress")
             analysis = await self.analysis.run(job.source.title or "Untitled", transcript)
             job.analysis = analysis
             job.stage = JobStage.publish
